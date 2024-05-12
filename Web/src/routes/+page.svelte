@@ -2,6 +2,7 @@
 	import Task from "../components/list/Task.svelte";
 	import Icon from "@iconify/svelte";
 	import { currPage } from "$lib/store";
+	import MetaTitle from "$lib/MetaTitle.svelte";
 
 	currPage.set("home");
 
@@ -96,9 +97,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>SveGo - Your tasks</title>
-</svelte:head>
+<MetaTitle title="Your tasks" />
 
 <h1 class="text-3xl font-bold text-center">Tasks</h1>
 
