@@ -1,6 +1,9 @@
 <script lang="ts">
     import Task from "../components/list/Task.svelte";
     import Icon from "@iconify/svelte";
+    import { currPage } from "$lib/store";
+
+    currPage.set("home");
 
     const FilterCompletionStatus = {
         ALL: "ALL",
@@ -93,29 +96,28 @@
     }
 </script>
 
+<svelte:head>
+    <title>SveGo - Your tasks</title>
+</svelte:head>
+
 <h1 class="text-3xl font-bold text-center">
     Tasks
 </h1>
 
-<div class="w-[650px] mt-8 mx-auto rounded">
+<div class="w-[650px] mt-10 mx-auto rounded">
     <form on:submit={addNewItem}>
         <div class="flex gap-4">
-            <input id="new_item_title" class="border-2 rounded p-2 flex-grow" type="text" placeholder="New task name"
-                bind:value={newTaskTitle} />
-            <button type="submit" class="p-2 rounded bg-emerald-500">
-                <Icon icon="heroicons:plus-solid" class="mx-auto size-6" />
+            <input id="new_item_title" class="border-2 rounded p-2 flex-grow text-slate-950" type="text"
+                   placeholder="New task name" bind:value={newTaskTitle} />
+            <button type="submit" class="px-3 rounded bg-orange-600 duration-300 hover:bg-orange-800 hover:scale-110">
+                <Icon icon="typcn:plus" class="mx-auto size-6" />
             </button>
         </div>
     </form>
-    <div class="mb-6 text-sm">
-        <p>
-            Total tasks: {sampleTasks.length}
-        </p>
-    </div>
-    <div class="mb-4 flex items-center justify-between border-b-2 border-black/10 pb-2">
+    <div class="mt-6 mb-4 flex items-center justify-between border-b-2 border-white/30 pb-2">
         <span class="font-semibold text-lg">Filters</span>
-        <button type="button" class="cursor-pointer bg-gray-300 px-2 py-1 text-center rounded min-w-[125px]
-                                     text-sm font-semibold" on:click={filterCompleted}>
+        <button type="button" class="cursor-pointer bg-gray-700 px-4 py-1 text-center rounded text-sm font-semibold"
+                on:click={filterCompleted}>
             {#if fCompletion === FilterCompletionStatus.ALL}
                 All
             {:else if fCompletion === FilterCompletionStatus.COMPLETED}
@@ -125,6 +127,7 @@
             {:else}
                 ERROR
             {/if}
+            ({visibleTasks.length})
         </button>
     </div>
     <div class="space-y-6">
