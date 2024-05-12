@@ -31,24 +31,3 @@
 		/>
 	</button>
 </form>
-
-<style>
-	@keyframes expand-arrow {
-		0% {
-			width: 0;
-		}
-		100% {
-			width: fit-content;
-		}
-	}
-
-	/*.btn-with-arrow .arrow {*/
-	/*	display: none;*/
-	/*}*/
-
-	.btn-with-arrow:hover .arrow {
-		display: block;
-		overflow: hidden;
-		animation: expand-arrow ease-in-out 5s;
-	}
-</style>
