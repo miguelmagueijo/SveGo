@@ -31,3 +31,9 @@
 		/>
 	</button>
 </form>
+<hr class="w-[175px] mx-auto my-8 border rounded border-white/30" />
+<p class="text-center text-sm">
+	Don't have an account?
+	<br />
+	<a class="underline font-semibold text-sky-300" href="/signup">Sign up!</a>
+</p>
