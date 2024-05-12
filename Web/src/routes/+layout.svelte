@@ -1,9 +1,13 @@
 <script>
 	import "../app.css";
 	import Navbar from "../components/Navbar.svelte";
+	import Footer from "../components/Footer.svelte";
 </script>
 
-<Navbar />
-<main class="mt-10">
-	<slot />
-</main>
+<div class="flex flex-col min-h-screen">
+	<Navbar />
+	<main class="mt-10 mb-auto">
+		<slot />
+	</main>
+	<Footer />
+</div>
