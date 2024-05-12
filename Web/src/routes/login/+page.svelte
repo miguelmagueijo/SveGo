@@ -20,8 +20,8 @@
 	</div>
 	<button
 		type="submit"
-		class="group relative mt-8 bg-orange-600 py-1.5 rounded font-bold w-full flex gap-1 justify-center items-center
-			   hover:bg-amber-800 duration-300"
+		class="group relative mt-8 bg-orange-700 py-1.5 rounded font-bold w-full flex gap-1 justify-center items-center
+			   hover:bg-amber-900 duration-300"
 	>
 		<span class="block"> Login </span>
 		<Icon

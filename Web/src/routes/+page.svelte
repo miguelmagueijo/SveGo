@@ -111,7 +111,7 @@
 				placeholder="New task name"
 				bind:value={newTaskTitle}
 			/>
-			<button type="submit" class="px-3 rounded bg-orange-600 duration-300 hover:bg-orange-800 hover:scale-110">
+			<button type="submit" class="px-3 rounded bg-orange-700 duration-300 hover:bg-orange-900 hover:scale-110">
 				<Icon icon="typcn:plus" class="mx-auto size-6" />
 			</button>
 		</div>
