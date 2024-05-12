@@ -15,7 +15,7 @@
 		<input id="i_usr" name="username" type="text" class="w-full text-black p-1 rounded" />
 	</div>
 	<div class="mt-4">
-		<label for="i_pw" class="block font-semibold">Username</label>
+		<label for="i_pw" class="block font-semibold">Password</label>
 		<input id="i_pw" name="password" type="password" class="w-full text-black p-1 rounded" />
 	</div>
 	<button
