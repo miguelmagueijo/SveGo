@@ -14,18 +14,6 @@ CREATE TABLE user (
     CONSTRAINT user_password_length CHECK (length(password) == 60)
 );
 
-CREATE TABLE session (
-    id TEXT PRIMARY KEY,
-    user_id INTEGER NOT NULL,
-    expires_at INTEGER(4) NOT NULL,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at INTEGER(4) NOT NULL DEFAULT (unixepoch('now')),
-
-    CONSTRAINT session_userId_fk FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE
-);
-
-CREATE INDEX session_userId_idx ON session(user_id);
-
 CREATE TABLE task (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
