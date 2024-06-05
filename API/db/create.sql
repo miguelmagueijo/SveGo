@@ -45,5 +45,5 @@ CREATE TABLE task (
 CREATE INDEX tasks_userId_idx ON task(user_id);
 
 INSERT INTO user (name, username, email, password, is_active)
-VALUES ('Svego Admin', 'svego', 'internal@svego.com', '$2a$12$jUjfWNVz8F2qIR5tXfxZ0O03mY0flKFvAzwGwweiZS/X1Cirwr1sm',
+VALUES ('Svego Admin', 'svego', 'internal@svego.com', '$2a$12$0xVpHFQBlk0BWzBxv7Ubsuqg/sYBhzNuYYyM563dGfzIl4ssue9LG',
         true)

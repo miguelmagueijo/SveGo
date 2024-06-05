@@ -364,7 +364,7 @@ func loginHandler(c *gin.Context) {
 	var formData svegoTypes.LoginFormData
 	if err := c.Bind(&formData); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Bad request",
+			"error": "Invalid credentials",
 		})
 		return
 	}
@@ -391,7 +391,7 @@ func loginHandler(c *gin.Context) {
 	if !isActive {
 		log.Println("Disabled user trying to login.", userJwtData)
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "User not found",
+			"error": "Account locked, please contact admin",
 		})
 		return
 	}
