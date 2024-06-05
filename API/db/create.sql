@@ -19,7 +19,7 @@ CREATE TABLE refresh_token (
     jwt_id TEXT NOT NULL,
     user_id INTEGER NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    expires_at INTEGER(4) NOT NULL DEFAULT (unixepoch('now')),
+    expires_at INTEGER(4) NOT NULL,
     created_at INTEGER(4) NOT NULL DEFAULT (unixepoch('now')),
     updated_at INTEGER(4) NOT NULL DEFAULT (unixepoch('now')),
 

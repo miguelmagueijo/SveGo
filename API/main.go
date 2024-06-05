@@ -65,56 +65,27 @@ func createDatabase() {
 /*####################################################################################################################*/
 /* Database functions */
 /*####################################################################################################################*/
-func addRefreshToken(userId int64, jwtId string) (string, error) {
+func addRefreshToken(userId int64, jwtId string, expiresIn int64) (string, error) {
 	refreshToken, err := uuid.NewRandom()
 
 	if err != nil {
 		return "", err
 	}
 
-	stmt, err := DB.Prepare("INSERT INTO refresh_token (id, jwt_id, user_id) VALUES (?, ?, ?);")
+	expireDate := time.Now().Add(time.Duration(expiresIn) * time.Second)
+	_, err = DB.Exec("INSERT INTO refresh_token (id, jwt_id, user_id, expires_at) VALUES (?, ?, ?, ?);",
+		refreshToken.String(), jwtId, userId, expireDate.Unix())
 
 	if err != nil {
 		return "", err
 	}
-
-	defer stmt.Close()
-
-	if _, err = stmt.Exec(refreshToken.String(), jwtId, userId); err != nil {
-		return "", err
-	}
-
 	return refreshToken.String(), nil
 }
 
 func setIsActiveRefreshToken(id string, isActive bool) error {
-	tx, err := DB.Begin()
-
-	if err != nil {
-		return err
-	}
-
-	stmt, err := tx.Prepare("UPDATE refresh_token SET is_active = ?, updated_at = unixepoch('now') WHERE id = ?")
-
-	if err != nil {
-		return err
-	}
-
-	defer stmt.Close()
-
-	if _, err = stmt.Exec(isActive, id); err != nil {
-		return err
-	}
-
-	if err = tx.Commit(); err != nil {
-		if errRollback := tx.Rollback(); errRollback != nil {
-			return errRollback
-		}
-
-		return err
-	}
-
-	return nil
+	_, err := DB.Exec("UPDATE refresh_token SET is_active = ?, updated_at = unixepoch('now') WHERE id = ?",
+		isActive, id)
+	return err
 }
 
 func getRefreshTokenData(id string) (*svegoTypes.RefreshTokenData, error) {
@@ -123,13 +94,12 @@ func getRefreshTokenData(id string) (*svegoTypes.RefreshTokenData, error) {
 	tokenData := svegoTypes.RefreshTokenData{}
 	err := row.Scan(&tokenData.Id, &tokenData.JwtId, &tokenData.UserId, &tokenData.IsActive, &tokenData.ExpiresAt, &tokenData.CreatedAt, &tokenData.UpdatedAt)
 
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			log.Println(err)
+		}
+
 		return nil, err
-	case err == nil:
-		break
-	default:
-		log.Fatal(err)
 	}
 
 	return &tokenData, nil
@@ -142,13 +112,12 @@ func getUserJwtData(id int64) (*svegoTypes.UserJwtData, error) {
 	var isActive bool
 	err := row.Scan(&userData.Id, &userData.Name, &userData.Username, &userData.Email, &isActive)
 
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			log.Println(err)
+		}
+
 		return nil, err
-	case err == nil:
-		break
-	default:
-		log.Fatal(err)
 	}
 
 	if !isActive {
@@ -164,13 +133,12 @@ func getUserMeData(id int64) (*svegoTypes.UserMeData, error) {
 	userData := svegoTypes.UserMeData{}
 	err := row.Scan(&userData.Id, &userData.Name, &userData.Username, &userData.Email, &userData.CreatedAt, &userData.UpdatedAt)
 
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			log.Println(err)
+		}
+
 		return nil, err
-	case err == nil:
-		break
-	default:
-		log.Fatal(err)
 	}
 
 	return &userData, nil
@@ -226,8 +194,12 @@ func renewJwtAndInjectCookie(c *gin.Context, accessToken *string) error {
 
 	if time.Now().After(time.Unix(refreshTokenData.ExpiresAt, 0)) {
 		if err = setIsActiveRefreshToken(refreshToken, false); err != nil {
-			return errors.New("refresh token expired")
+			log.Println("could not set isActive for refresh token")
+			return errors.New("couldn't update refresh token on database")
 		}
+
+		c.SetCookie("refreshToken", "", -1, "/", "localhost", false, true)
+		return errors.New("refresh token expired")
 	}
 
 	userData, err := getUserJwtData(refreshTokenData.UserId)
@@ -258,7 +230,7 @@ func JwtAuthMiddleware() gin.HandlerFunc {
 		if err != nil {
 			if errRenew := renewJwtAndInjectCookie(c, &accessToken); errRenew != nil {
 				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-					"message": "unauthorized",
+					"message": "you need to login",
 				})
 				return
 			}
@@ -443,7 +415,7 @@ func loginHandler(c *gin.Context) {
 		return
 	}
 
-	refreshToken, err := addRefreshToken(userJwtData.Id, jwtId.String())
+	refreshToken, err := addRefreshToken(userJwtData.Id, jwtId.String(), int64(RefreshTokenCookieDuration))
 
 	if err != nil {
 		log.Println(err)
@@ -477,6 +449,8 @@ func main() {
 	}
 
 	DB, err = sql.Open("sqlite3", "./db/svego.sqlite")
+
+	defer DB.Close()
 
 	if err != nil {
 		log.Fatal(err)
