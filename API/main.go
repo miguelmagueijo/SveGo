@@ -450,8 +450,6 @@ func main() {
 
 	DB, err = sql.Open("sqlite3", "./db/svego.sqlite")
 
-	defer DB.Close()
-
 	if err != nil {
 		log.Fatal(err)
 	}
