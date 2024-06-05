@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -24,6 +23,8 @@ import (
 /*####################################################################################################################*/
 var DB *sql.DB
 var DotEnvData map[string]string
+var AccessTokenCookieDuration = 60 * 60
+var RefreshTokenCookieDuration = getDaysInSeconds(30)
 
 /*####################################################################################################################*/
 /* Start functions */
@@ -62,17 +63,189 @@ func createDatabase() {
 }
 
 /*####################################################################################################################*/
-/* Helper functions */
+/* Database functions */
 /*####################################################################################################################*/
-func extractJwtString(r *http.Request) (string, error) {
-	bearerToken := r.Header.Get("Authorization")
+func addRefreshToken(userId int64, jwtId string) (string, error) {
+	refreshToken, err := uuid.NewRandom()
 
-	headerParts := strings.Split(bearerToken, " ")
-	if len(headerParts) != 2 {
-		return "", errors.New("invalid authorization header")
+	if err != nil {
+		return "", err
 	}
 
-	return headerParts[1], nil
+	stmt, err := DB.Prepare("INSERT INTO refresh_token (id, jwt_id, user_id) VALUES (?, ?, ?);")
+
+	if err != nil {
+		return "", err
+	}
+
+	defer stmt.Close()
+
+	if _, err = stmt.Exec(refreshToken.String(), jwtId, userId); err != nil {
+		return "", err
+	}
+
+	return refreshToken.String(), nil
+}
+
+func setIsActiveRefreshToken(id string, isActive bool) error {
+	tx, err := DB.Begin()
+
+	if err != nil {
+		return err
+	}
+
+	stmt, err := tx.Prepare("UPDATE refresh_token SET is_active = ?, updated_at = unixepoch('now') WHERE id = ?")
+
+	if err != nil {
+		return err
+	}
+
+	defer stmt.Close()
+
+	if _, err = stmt.Exec(isActive, id); err != nil {
+		return err
+	}
+
+	if err = tx.Commit(); err != nil {
+		if errRollback := tx.Rollback(); errRollback != nil {
+			return errRollback
+		}
+
+		return err
+	}
+
+	return nil
+}
+
+func getRefreshTokenData(id string) (*svegoTypes.RefreshTokenData, error) {
+	row := DB.QueryRow("SELECT id, jwt_id, user_id, is_active, expires_at, created_at, updated_at FROM refresh_token WHERE id = ?", id)
+
+	tokenData := svegoTypes.RefreshTokenData{}
+	err := row.Scan(&tokenData.Id, &tokenData.JwtId, &tokenData.UserId, &tokenData.IsActive, &tokenData.ExpiresAt, &tokenData.CreatedAt, &tokenData.UpdatedAt)
+
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil, err
+	case err == nil:
+		break
+	default:
+		log.Fatal(err)
+	}
+
+	return &tokenData, nil
+}
+
+func getUserJwtData(id int64) (*svegoTypes.UserJwtData, error) {
+	row := DB.QueryRow("SELECT id, name, username, email, is_active FROM user WHERE id = ?;", id)
+
+	userData := svegoTypes.UserJwtData{}
+	var isActive bool
+	err := row.Scan(&userData.Id, &userData.Name, &userData.Username, &userData.Email, &isActive)
+
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil, err
+	case err == nil:
+		break
+	default:
+		log.Fatal(err)
+	}
+
+	if !isActive {
+		return nil, errors.New("cannot fetch jwt data from an user that is disabled")
+	}
+
+	return &userData, nil
+}
+
+func getUserMeData(id int64) (*svegoTypes.UserMeData, error) {
+	row := DB.QueryRow("SELECT id, name, username, email, created_at, updated_at FROM user WHERE id = ?;", id)
+
+	userData := svegoTypes.UserMeData{}
+	err := row.Scan(&userData.Id, &userData.Name, &userData.Username, &userData.Email, &userData.CreatedAt, &userData.UpdatedAt)
+
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil, err
+	case err == nil:
+		break
+	default:
+		log.Fatal(err)
+	}
+
+	return &userData, nil
+}
+
+/*####################################################################################################################*/
+/* Auxiliary functions */
+/*####################################################################################################################*/
+func generateJwt(userData *svegoTypes.UserJwtData, tokenId string) (string, error) {
+	now := time.Now()
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS512, jwt.MapClaims{
+		"user_id":  strconv.FormatInt(userData.Id, 10),
+		"username": userData.Username,
+		"email":    userData.Email,
+		"iat":      now.Unix(),
+		"exp":      now.Add(time.Hour * 24 * 30).Unix(),
+		"jti":      tokenId,
+	})
+
+	return token.SignedString([]byte(DotEnvData["JWT_SIGNING_KEY"]))
+}
+
+func getDaysInSeconds(n int) int {
+	return 60 * 60 * 24 * n
+}
+
+func parseJwt(jwtString string) (*jwt.Token, error) {
+	return jwt.Parse(jwtString, func(token *jwt.Token) (interface{}, error) {
+		return []byte(DotEnvData["JWT_SIGNING_KEY"]), nil
+	})
+}
+
+/*####################################################################################################################*/
+/* Request changer functions */
+/*####################################################################################################################*/
+func renewJwtAndInjectCookie(c *gin.Context, accessToken *string) error {
+	refreshToken, err := c.Cookie("refreshToken")
+
+	if err != nil {
+		return err
+	}
+
+	refreshTokenData, err := getRefreshTokenData(refreshToken)
+
+	if err != nil {
+		return err
+	}
+
+	if !refreshTokenData.IsActive {
+		return errors.New("refresh token expired")
+	}
+
+	if time.Now().After(time.Unix(refreshTokenData.ExpiresAt, 0)) {
+		if err = setIsActiveRefreshToken(refreshToken, false); err != nil {
+			return errors.New("refresh token expired")
+		}
+	}
+
+	userData, err := getUserJwtData(refreshTokenData.UserId)
+
+	if err != nil {
+		return err
+	}
+
+	newJwt, err := generateJwt(userData, refreshTokenData.JwtId)
+
+	if err != nil {
+		return err
+	}
+
+	*accessToken = newJwt
+	c.SetCookie("token", newJwt, AccessTokenCookieDuration, "/", "localhost", false, true)
+
+	return nil
 }
 
 /*####################################################################################################################*/
@@ -80,11 +253,18 @@ func extractJwtString(r *http.Request) (string, error) {
 /*####################################################################################################################*/
 func JwtAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		tokenString, err := extractJwtString(c.Request)
+		accessToken, err := c.Cookie("token")
 
-		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			return []byte(DotEnvData["JWT_SIGNING_KEY"]), nil
-		})
+		if err != nil {
+			if errRenew := renewJwtAndInjectCookie(c, &accessToken); errRenew != nil {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+					"message": "unauthorized",
+				})
+				return
+			}
+		}
+
+		token, err := parseJwt(accessToken)
 
 		if err != nil {
 			log.Println(err)
@@ -95,7 +275,6 @@ func JwtAuthMiddleware() gin.HandlerFunc {
 		}
 
 		if !token.Valid {
-			log.Println("Invalid token")
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"message": "unauthorized",
 			})
@@ -121,13 +300,18 @@ func JwtAuthMiddleware() gin.HandlerFunc {
 		}
 
 		if expDate.Before(time.Now()) {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"message": "expired session",
-			})
-			return
+			if errRenew := renewJwtAndInjectCookie(c, &accessToken); errRenew != nil {
+				log.Println(errRenew)
+				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+					"error": "couldn't renew token",
+				})
+				return
+			} else {
+				c.Redirect(http.StatusFound, "/logout")
+				c.Abort()
+				return
+			}
 		}
-
-		fmt.Println(claims)
 
 		userId, ok := claims["user_id"].(string)
 		if !ok {
@@ -153,22 +337,54 @@ func status(c *gin.Context) {
 }
 
 func getTasks(c *gin.Context) {
+	fmt.Println("Getting tasks for user:", c.MustGet("user_id"))
+
 	c.JSON(http.StatusInternalServerError, gin.H{
 		"error": "not yet implemented",
 	})
 }
 
 func meHandler(c *gin.Context) {
+	userIdStr := c.MustGet("user_id").(string)
+
+	userId, err := strconv.ParseInt(userIdStr, 10, 64)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "could not fetch user data",
+		})
+		return
+	}
+
+	userData, err := getUserMeData(userId)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "could not fetch user data",
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "ok",
-		"data": map[string]interface{}{
-			"user_id": c.MustGet("user_id"),
-		},
+		"data":    userData,
 	})
 }
 
+func logoutHandler(c *gin.Context) {
+	c.SetCookie("token", "", -1, "/", "localhost", false, true)
+	c.SetCookie("refreshToken", "", -1, "/", "localhost", false, true)
+
+	c.Redirect(http.StatusFound, "/")
+}
+
 func loginHandler(c *gin.Context) {
-	if _, err := extractJwtString(c.Request); err == nil {
+	if _, err := c.Cookie("token"); err == nil {
+		c.Redirect(http.StatusFound, "/")
+		return
+	}
+
+	if _, err := c.Cookie("refreshToken"); err == nil {
 		c.Redirect(http.StatusFound, "/")
 		return
 	}
@@ -181,13 +397,12 @@ func loginHandler(c *gin.Context) {
 		return
 	}
 
-	var userId int64
+	var userJwtData svegoTypes.UserJwtData
 	var password string
 	var isActive bool
+	row := DB.QueryRow("SELECT id, username, email, password, is_active FROM user WHERE username = ?", formData.Username)
 
-	row := DB.QueryRow("SELECT id, password, is_active FROM user WHERE username = ?", formData.Username)
-
-	err := row.Scan(&userId, &password, &isActive)
+	err := row.Scan(&userJwtData.Id, &userJwtData.Username, &userJwtData.Email, &password, &isActive)
 
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -201,6 +416,14 @@ func loginHandler(c *gin.Context) {
 		log.Fatal(err)
 	}
 
+	if !isActive {
+		log.Println("Disabled user trying to login.", userJwtData)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "User not found",
+		})
+		return
+	}
+
 	err = bcrypt.CompareHashAndPassword([]byte(password), []byte(formData.Password))
 
 	if err != nil {
@@ -210,7 +433,7 @@ func loginHandler(c *gin.Context) {
 		return
 	}
 
-	tokenId, err := uuid.NewRandom()
+	jwtId, err := uuid.NewRandom()
 
 	if err != nil {
 		log.Println(err)
@@ -220,15 +443,7 @@ func loginHandler(c *gin.Context) {
 		return
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS512, jwt.MapClaims{
-		"user_id": strconv.FormatInt(userId, 10),
-		"iss":     "svego.todolist.forgedin.space",
-		"iat":     time.Now().Unix(),
-		"exp":     time.Now().Add(time.Hour * 24 * 30).Unix(),
-		"jti":     tokenId.String(),
-	})
-
-	tokenString, err := token.SignedString([]byte(DotEnvData["JWT_SIGNING_KEY"]))
+	refreshToken, err := addRefreshToken(userJwtData.Id, jwtId.String())
 
 	if err != nil {
 		log.Println(err)
@@ -237,10 +452,14 @@ func loginHandler(c *gin.Context) {
 		})
 		return
 	}
+
+	jwtString, err := generateJwt(&userJwtData, jwtId.String())
+
+	c.SetCookie("token", jwtString, AccessTokenCookieDuration, "/", "localhost", false, true)
+	c.SetCookie("refreshToken", refreshToken, RefreshTokenCookieDuration, "/", "localhost", false, true)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "You have successfully logged in",
-		"token":   tokenString,
 	})
 }
 
@@ -273,6 +492,7 @@ func main() {
 	routerV1 := router.Group("/v1")
 
 	routerV1.POST("/login", loginHandler)
+	routerV1.GET("/logout", logoutHandler)
 
 	authorizedGroup := router.Group("/")
 	authorizedGroup.Use(JwtAuthMiddleware())
@@ -281,10 +501,6 @@ func main() {
 
 		v1Group.GET("/tasks", getTasks)
 		v1Group.GET("/me", meHandler)
-
-		// nested group
-		//testing := authorizedGroup.Group("testing")
-		//testing.GET("/analytics", analyticsEndpoint)
 	}
 
 	err = router.Run(":4555")

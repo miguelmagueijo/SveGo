@@ -14,6 +14,22 @@ CREATE TABLE user (
     CONSTRAINT user_password_length CHECK (length(password) == 60)
 );
 
+CREATE TABLE refresh_token (
+    id TEXT PRIMARY KEY,
+    jwt_id TEXT NOT NULL,
+    user_id INTEGER NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    expires_at INTEGER(4) NOT NULL DEFAULT (unixepoch('now')),
+    created_at INTEGER(4) NOT NULL DEFAULT (unixepoch('now')),
+    updated_at INTEGER(4) NOT NULL DEFAULT (unixepoch('now')),
+
+    CONSTRAINT refreshToken_jwtId_unique UNIQUE (jwt_id),
+    CONSTRAINT refreshToken_userId_fk FOREIGN KEY (user_id) REFERENCES user(id)
+);
+
+CREATE INDEX refreshToken_jwtId_idx ON refresh_token(jwt_id);
+CREATE INDEX refreshToken_userId_idx ON refresh_token(user_id);
+
 CREATE TABLE task (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
