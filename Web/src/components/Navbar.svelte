@@ -6,7 +6,7 @@
 <nav class="p-4 flex items-center justify-between border-b-2 border-white/10">
 	<a href="/">
 		<h1 class="font-bold text-2xl select-none">
-			<span style="color: #f73c00">Sve</span><span style="color: #08afd8">Go</span> List
+			<span style="color: #f73c00">Sve</span><span style="color: #08afd8">Go</span>
 		</h1>
 	</a>
 	<div class="flex gap-4">
